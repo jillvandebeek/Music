@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en" data-theme-choice="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Melodrop · AI Song Studio</title>
+  <meta name="description" content="Turn any idea into a finished song. A friendly studio for the Suno API: generate, extend, cover, remix, split stems, karaoke and more." />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%23ff5c8a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 40V24M26 46V18M34 40V24M42 44V20M50 36V28' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/app.css" />
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    (function () {
+      try {
+        var c = localStorage.getItem('md.theme') || 'system';
+        var dark = c === 'dark' || (c === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.themeChoice = c;
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <!-- ============ KEY GATE ============ -->
+  <section id="gate" class="gate" hidden>
+    <div class="gate-bg" aria-hidden="true">
+      <div class="eq eq-big"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="gate-card">
+      <div class="brand brand-lg"><span class="logo" aria-hidden="true"></span><span>Melodrop</span></div>
+      <h1>Turn any idea into a song.</h1>
+      <p class="lead">A friendly studio for the Suno API. Describe a vibe, write lyrics, remix your own audio, split stems, sing along. All from one page.</p>
+      <ol class="steps">
+        <li><b>Grab a key</b> from <a href="https://sunoapi.org/api-key" target="_blank" rel="noopener">sunoapi.org/api-key</a></li>
+        <li><b>Paste it below</b>. We check it and show your credits</li>
+        <li><b>Make something</b>. Your first song is about a minute away</li>
+      </ol>
+      <form id="keyForm" class="key-form" autocomplete="off">
+        <label for="keyInput" class="sr-only">Suno API key</label>
+        <div class="key-input">
+          <input id="keyInput" type="password" placeholder="Paste your Suno API key" spellcheck="false" required />
+          <button type="button" class="icon-btn" id="keyPeek" aria-label="Show key">👁</button>
+        </div>
+        <label class="check"><input type="checkbox" id="keyRemember" checked /> Remember on this device</label>
+        <button class="btn btn-primary btn-lg" type="submit" id="keySubmit"><span>Unlock the studio</span></button>
+        <p class="form-error" id="keyError" role="alert"></p>
+      </form>
+      <p class="fine">Your key stays in this browser. Requests go to Suno API through this site's pass-through proxy and nothing is stored on a server.</p>
+      <div class="gate-theme" data-theme-control></div>
+    </div>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><span>Melodrop</span></div>
+      <nav class="tabs" role="tablist" aria-label="Studio sections">
+        <button role="tab" data-tab="create" aria-selected="true"><span class="ti">✦</span>Create</button>
+        <button role="tab" data-tab="remix"><span class="ti">⟲</span>Remix</button>
+        <button role="tab" data-tab="sounds"><span class="ti">◉</span>Sounds</button>
+        <button role="tab" data-tab="lyrics"><span class="ti">✎</span>Lyrics</button>
+        <button role="tab" data-tab="library"><span class="ti">♫</span>Library <span class="badge" id="libCount">0</span></button>
+      </nav>
+      <div class="top-actions">
+        <button class="pill" id="credits" title="Remaining credits (click to refresh)"><span class="dot"></span><span id="creditsVal">…</span> credits</button>
+        <div data-theme-control></div>
+        <button class="icon-btn" id="lockBtn" title="Change or forget API key" aria-label="Change API key">🔑</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- ---------- CREATE ---------- -->
+      <section class="panel" data-panel="create">
+        <div class="create-grid">
+          <form id="createForm" class="card form-card" novalidate>
+            <div class="card-head">
+              <div>
+                <h2>Create a song</h2>
+                <p class="muted" id="modeHint">Describe it in plain words and we handle lyrics, style and arrangement.</p>
+              </div>
+              <div class="seg" id="modeSeg" role="radiogroup" aria-label="Creation mode">
+                <button type="button" data-mode="simple" aria-pressed="true">Simple</button>
+                <button type="button" data-mode="custom" aria-pressed="false">Custom</button>
+              </div>
+            </div>
+
+            <!-- Simple mode -->
+            <div data-show="simple">
+              <div class="field">
+                <div class="label-row">
+                  <label for="simplePrompt">What's the song about?</label>
+                  <button type="button" class="link-btn" id="surpriseBtn">🎲 Surprise me</button>
+                </div>
+                <textarea id="simplePrompt" rows="4" maxlength="3000" placeholder="An upbeat summer anthem about road-tripping with your best friends, windows down, singing too loud"></textarea>
+                <div class="field-foot"><div class="chips" id="ideaChips"></div><span class="count" data-count="simplePrompt"></span></div>
+              </div>
+              <div class="field">
+                <label for="simpleStyle">Style hint <span class="opt">optional</span></label>
+                <input id="simpleStyle" maxlength="1000" placeholder="e.g. indie pop, jangly guitars, female vocals" />
+              </div>
+              <details class="sub">
+                <summary>Reference media <span class="opt">optional · images, video or audio to inspire the song</span></summary>
+                <div class="dropzone" id="refDrop" tabindex="0">
+                  <input type="file" id="refFile" accept="image/*,video/*,audio/*" multiple hidden />
+                  <p><b>Drop files</b> or <button type="button" class="link-btn" data-pick="refFile">browse</button></p>
+                  <p class="muted small">Up to 5 images, 1 video (≤241s) and audio (6s–30min). Files are uploaded to Suno API temp storage for 3 days.</p>
+                </div>
+                <div class="url-add">
+                  <input id="refUrl" type="url" placeholder="…or paste a public file URL" />
+                  <select id="refUrlKind" aria-label="Media type"><option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option></select>
+                  <button type="button" class="btn btn-ghost" id="refUrlAdd">Add</button>
+                </div>
+                <div class="media-list" id="refList"></div>
+              </details>
+            </div>
+
+            <!-- Custom mode -->
+            <div data-show="custom" hidden>
+              <div class="field">
+                <label for="cTitle">Title</label>
+                <input id="cTitle" maxlength="80" placeholder="Midnight Drive" />
+              </div>
+              <div class="field">
+                <div class="label-row">
+                  <label for="cStyle">Style of music</label>
+                  <button type="button" class="link-btn" id="boostBtn" title="Let AI expand your style into a richer description">✨ Boost style</button>
+                </div>
+                <textarea id="cStyle" rows="2" maxlength="1000" placeholder="synthwave, retro 80s, driving bassline, airy female vocals"></textarea>
+                <div class="field-foot"><span class="muted small" id="boostUndo"></span><span class="count" data-count="cStyle"></span></div>
+                <div class="tag-tray" id="tagTray"></div>
+              </div>
+              <div class="switch-row">
+                <label class="switch"><input type="checkbox" id="cInstrumental" /><span></span> Instrumental (no vocals)</label>
+              </div>
+              <div class="field" id="lyricsField">
+                <div class="label-row">
+                  <label for="cLyrics">Lyrics</label>
+                  <button type="button" class="link-btn" id="aiLyricsToggle">✍️ Write with AI</button>
+                </div>
+                <div class="ai-lyrics" id="aiLyricsRow" hidden>
+                  <input id="aiLyricsPrompt" maxlength="200" placeholder="What should the lyrics be about? (200 chars)" />
+                  <button type="button" class="btn btn-soft" id="aiLyricsGo">Write</button>
+                </div>
+                <div class="struct-tags" id="structTags"></div>
+                <textarea id="cLyrics" rows="10" maxlength="5000" placeholder="[Verse]&#10;Neon rivers on the highway&#10;&#10;[Chorus]&#10;We're alive at midnight…"></textarea>
+                <div class="field-foot"><span class="muted small">Use [Verse], [Chorus], [Bridge] tags to shape the song.</span><span class="count" data-count="cLyrics"></span></div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label for="cNegative">Avoid <span class="opt">optional</span></label>
+                  <input id="cNegative" maxlength="1000" placeholder="heavy metal, screaming" />
+                </div>
+                <div class="field" id="vocalField">
+                  <span class="label">Vocals</span>
+                  <div class="seg seg-sm" id="vocalSeg">
+                    <button type="button" data-v="" aria-pressed="true">Any</button>
+                    <button type="button" data-v="f" aria-pressed="false">Female</button>
+                    <button type="button" data-v="m" aria-pressed="false">Male</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" data-show="simple">
+              <div class="switch-row"><label class="switch"><input type="checkbox" id="sInstrumental" /><span></span> Instrumental (no vocals)</label></div>
+            </div>
+
+            <div class="field">
+              <span class="label">Model</span>
+              <div class="model-picker" id="modelPicker"></div>
+              <button type="button" class="link-btn small" id="legacyToggle">Show legacy models</button>
+            </div>
+
+            <details class="sub" data-show="custom" hidden id="advanced">
+              <summary>Advanced controls <span class="opt">variety, weights, length, persona</span></summary>
+              <div class="field">
+                <div class="label-row"><label for="cVariety">Variety</label><span class="val" id="cVarietyVal">Balanced</span></div>
+                <input type="range" id="cVariety" min="0" max="4" step="1" value="1" />
+                <div class="range-legend"><span>Exact</span><span>Max</span></div>
+              </div>
+              <label class="switch"><input type="checkbox" id="cTune" /><span></span> Fine-tune weights</label>
+              <div class="tune" id="tuneBox" hidden>
+                <div class="field"><div class="label-row"><label for="cStyleWeight">Style adherence</label><span class="val" data-val="cStyleWeight"></span></div><input type="range" id="cStyleWeight" min="0" max="1" step="0.01" value="0.65" /></div>
+                <div class="field"><div class="label-row"><label for="cWeird">Weirdness</label><span class="val" data-val="cWeird"></span></div><input type="range" id="cWeird" min="0" max="1" step="0.01" value="0.5" /></div>
+                <div class="field" id="audioWeightField"><div class="label-row"><label for="cAudioWeight">Audio weight</label><span class="val" data-val="cAudioWeight"></span></div><input type="range" id="cAudioWeight" min="0" max="1" step="0.01" value="0.65" /></div>
+              </div>
+              <div id="durationBox">
+                <label class="switch"><input type="checkbox" id="cDurOn" /><span></span> Set length</label>
+                <div class="field" id="durRow" hidden><div class="label-row"><label for="cDur">Length</label><span class="val" id="cDurVal">0:20</span></div><input type="range" id="cDur" min="10" max="360" step="5" value="60" /></div>
+              </div>
+              <p class="muted small" id="durNote" hidden>Length control is available on V6, V6 Wild, V6 Mini and V5.5.</p>
+              <div class="field persona-field" data-persona-slot></div>
+            </details>
+
+            <div class="submit-row">
+              <button class="btn btn-primary btn-lg" type="submit" id="createBtn"><span>✦ Generate song</span></button>
+              <p class="muted small">Each run creates <b>two takes</b>. Tip: <kbd>Ctrl</kbd>+<kbd>Enter</kbd></p>
+            </div>
+          </form>
+
+          <aside class="side">
+            <div class="card">
+              <div class="card-head"><h3>In the studio</h3><button class="link-btn small" data-goto="library">Open library →</button></div>
+              <div id="recentJobs" class="job-list"></div>
+            </div>
+            <div class="card tips">
+              <h3>Pro tips</h3>
+              <ul>
+                <li><b>Simple</b> is fastest: one sentence is enough.</li>
+                <li><b>Custom</b> sings your exact lyrics. Section tags like <code>[Chorus]</code> help a lot.</li>
+                <li>Love a take? Open it in the library to <b>extend</b>, <b>replace a section</b>, <b>split stems</b> or <b>sing along</b>.</li>
+                <li>Files are kept for about 14 days, so download your favourites.</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ---------- REMIX ---------- -->
+      <section class="panel" data-panel="remix" hidden>
+        <form id="remixForm" class="card form-card wide" novalidate>
+          <div class="card-head">
+            <div><h2>Remix your audio</h2><p class="muted">Bring your own track, or reuse one from your library.</p></div>
+          </div>
+          <div class="op-grid" id="remixOps" role="radiogroup" aria-label="Remix type"></div>
+
+          <div class="src-wrap">
+            <div class="src" data-src="A">
+              <div class="label-row"><span class="label" data-src-label>Source audio</span><span class="muted small" data-src-status></span></div>
+              <div class="seg seg-sm" data-src-tabs>
+                <button type="button" data-k="file" aria-pressed="true">Upload</button>
+                <button type="button" data-k="url" aria-pressed="false">URL</button>
+                <button type="button" data-k="lib" aria-pressed="false">Library</button>
+              </div>
+              <div data-k-pane="file" class="dropzone small-dz" tabindex="0"><input type="file" accept="audio/*" hidden /><p><b>Drop audio</b> or <button type="button" class="link-btn" data-browse>browse</button> <span class="muted small">(max 8 min)</span></p></div>
+              <div data-k-pane="url" hidden><input type="url" placeholder="https://…/track.mp3" data-url /></div>
+              <div data-k-pane="lib" hidden><select data-lib><option value="">Choose a track…</option></select></div>
+            </div>
+            <div class="src" data-src="B" hidden>
+              <div class="label-row"><span class="label">Second track</span><span class="muted small" data-src-status></span></div>
+              <div class="seg seg-sm" data-src-tabs>
+                <button type="button" data-k="file" aria-pressed="true">Upload</button>
+                <button type="button" data-k="url" aria-pressed="false">URL</button>
+                <button type="button" data-k="lib" aria-pressed="false">Library</button>
+              </div>
+              <div data-k-pane="file" class="dropzone small-dz" tabindex="0"><input type="file" accept="audio/*" hidden /><p><b>Drop audio</b> or <button type="button" class="link-btn" data-browse>browse</button></p></div>
+              <div data-k-pane="url" hidden><input type="url" placeholder="https://…/track.mp3" data-url /></div>
+              <div data-k-pane="lib" hidden><select data-lib><option value="">Choose a track…</option></select></div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field" data-ops="cover extend vocals instrumental mashup"><label for="rTitle">Title <span class="opt" data-req-note></span></label><input id="rTitle" maxlength="80" placeholder="My remix" /></div>
+            <div class="field" data-ops="cover extend vocals instrumental mashup"><label for="rStyle">Style <span class="opt" data-req-note></span></label><input id="rStyle" maxlength="1000" placeholder="lo-fi jazz, mellow keys" /></div>
+          </div>
+          <div class="field" data-ops="vocals instrumental"><label for="rNegative">Avoid <span class="opt">required</span></label><input id="rNegative" maxlength="1000" placeholder="distorted, off-key" /></div>
+          <div class="field" data-ops="cover extend mashup"><label for="rNegative2">Avoid <span class="opt">optional</span></label><input id="rNegative2" maxlength="1000" placeholder="heavy metal" /></div>
+          <div class="switch-row" data-ops="cover extend"><label class="switch"><input type="checkbox" id="rInstrumental" /><span></span> Instrumental</label></div>
+          <div class="field" data-ops="cover extend vocals mashup" id="rLyricsField"><label for="rLyrics">Lyrics <span class="opt">optional</span></label><textarea id="rLyrics" rows="6" maxlength="5000" placeholder="[Verse]&#10;…"></textarea></div>
+          <div class="field" data-ops="extend"><label for="rContinue">Continue from (seconds) <span class="opt">optional · blank = end</span></label><input id="rContinue" type="number" min="1" step="0.5" placeholder="e.g. 60" /></div>
+          <div class="grid-2">
+            <div class="field"><label for="rModel">Model</label><select id="rModel" data-model-select></select></div>
+            <div class="field" data-ops="cover extend vocals instrumental mashup"><span class="label">Vocals</span>
+              <div class="seg seg-sm" id="rVocalSeg"><button type="button" data-v="" aria-pressed="true">Any</button><button type="button" data-v="f" aria-pressed="false">Female</button><button type="button" data-v="m" aria-pressed="false">Male</button></div>
+            </div>
+          </div>
+          <details class="sub" data-ops="cover extend vocals instrumental mashup">
+            <summary>Advanced <span class="opt">variety, weights, persona</span></summary>
+            <div class="field"><div class="label-row"><label for="rVariety">Variety</label><span class="val" id="rVarietyVal">Balanced</span></div><input type="range" id="rVariety" min="0" max="4" step="1" value="1" /></div>
+            <label class="switch"><input type="checkbox" id="rTune" /><span></span> Fine-tune weights</label>
+            <div class="tune" id="rTuneBox" hidden>
+              <div class="field"><div class="label-row"><label for="rStyleWeight">Style adherence</label><span class="val" data-val="rStyleWeight"></span></div><input type="range" id="rStyleWeight" min="0" max="1" step="0.01" value="0.65" /></div>
+              <div class="field"><div class="label-row"><label for="rWeird">Weirdness</label><span class="val" data-val="rWeird"></span></div><input type="range" id="rWeird" min="0" max="1" step="0.01" value="0.5" /></div>
+              <div class="field"><div class="label-row"><label for="rAudioWeight">Audio weight</label><span class="val" data-val="rAudioWeight"></span></div><input type="range" id="rAudioWeight" min="0" max="1" step="0.01" value="0.65" /></div>
+            </div>
+            <div data-ops="cover mashup">
+              <label class="switch"><input type="checkbox" id="rDurOn" /><span></span> Set length (V6 / V5.5)</label>
+              <div class="field" id="rDurRow" hidden><div class="label-row"><label for="rDur">Length</label><span class="val" id="rDurVal">1:00</span></div><input type="range" id="rDur" min="10" max="360" step="5" value="60" /></div>
+            </div>
+            <div class="field persona-field" data-ops="cover extend mashup" data-persona-slot></div>
+          </details>
+          <div class="submit-row">
+            <button class="btn btn-primary btn-lg" type="submit" id="remixBtn"><span>⟲ Start remix</span></button>
+            <p class="muted small" id="remixHint"></p>
+          </div>
+        </form>
+      </section>
+
+      <!-- ---------- SOUNDS ---------- -->
+      <section class="panel" data-panel="sounds" hidden>
+        <form id="soundsForm" class="card form-card wide" novalidate>
+          <div class="card-head"><div><h2>Sound design</h2><p class="muted">Loops, ambiences and one-shots with tempo and key control.</p></div></div>
+          <div class="field">
+            <label for="sPrompt">Describe the sound</label>
+            <textarea id="sPrompt" rows="3" maxlength="500" placeholder="A soft rain ambience with distant thunder and gentle wind"></textarea>
+            <div class="field-foot"><div class="chips" id="soundChips"></div><span class="count" data-count="sPrompt"></span></div>
+          </div>
+          <div class="grid-3">
+            <div class="field"><label for="sModel">Model</label><select id="sModel" data-model-select></select></div>
+            <div class="field"><label for="sKey">Key</label><select id="sKey"></select></div>
+            <div class="field">
+              <div class="label-row"><label for="sBpm">Tempo</label><span class="val" id="sBpmVal">Auto</span></div>
+              <input type="range" id="sBpm" min="0" max="300" step="1" value="0" aria-describedby="sBpmHelp" />
+              <span class="muted small" id="sBpmHelp">Slide to 0 for automatic tempo.</span>
+            </div>
+          </div>
+          <div class="switch-row">
+            <label class="switch"><input type="checkbox" id="sLoop" /><span></span> Seamless loop</label>
+            <label class="switch"><input type="checkbox" id="sGrab" /><span></span> Capture lyric subtitles</label>
+          </div>
+          <div class="submit-row"><button class="btn btn-primary btn-lg" type="submit" id="soundsBtn"><span>◉ Generate sound</span></button></div>
+        </form>
+      </section>
+
+      <!-- ---------- LYRICS ---------- -->
+      <section class="panel" data-panel="lyrics" hidden>
+        <div class="lyrics-grid">
+          <form id="lyricsForm" class="card form-card" novalidate>
+            <div class="card-head"><div><h2>Lyrics lab</h2><p class="muted">Get lyric drafts in seconds, then send your favourite straight to Create.</p></div></div>
+            <div class="field">
+              <label for="lPrompt">Theme, mood, story</label>
+              <textarea id="lPrompt" rows="3" maxlength="200" placeholder="A bittersweet goodbye to a small coastal town, hopeful chorus"></textarea>
+              <div class="field-foot"><div class="chips" id="lyricChips"></div><span class="count" data-count="lPrompt"></span></div>
+            </div>
+            <div class="submit-row"><button class="btn btn-primary btn-lg" type="submit" id="lyricsBtn"><span>✎ Write lyrics</span></button></div>
+          </form>
+          <div id="lyricsResults" class="lyrics-results"></div>
+        </div>
+      </section>
+
+      <!-- ---------- LIBRARY ---------- -->
+      <section class="panel" data-panel="library" hidden>
+        <div class="lib-bar">
+          <h2>Your library</h2>
+          <div class="lib-tools">
+            <input type="search" id="libSearch" placeholder="Search titles, styles…" />
+            <div class="seg seg-sm" id="libFilter">
+              <button type="button" data-f="all" aria-pressed="true">All</button>
+              <button type="button" data-f="fav" aria-pressed="false">★ Favourites</button>
+              <button type="button" data-f="active" aria-pressed="false">In progress</button>
+            </div>
+            <button type="button" class="btn btn-ghost" id="lookupBtn" title="Load an existing task by its ID">+ Load task ID</button>
+          </div>
+        </div>
+        <p class="muted small notice">Suno API keeps generated files for about 14 days. Download anything you want to keep.</p>
+        <div id="libGrid" class="lib-grid"></div>
+      </section>
+    </main>
+
+    <!-- ---------- PLAYER ---------- -->
+    <div class="player" id="player" hidden>
+      <div class="pl-art" id="plArt"></div>
+      <div class="pl-meta"><div class="pl-title" id="plTitle"></div><div class="pl-sub" id="plSub"></div></div>
+      <div class="pl-controls">
+        <button class="icon-btn" id="plPrev" aria-label="Previous">⏮</button>
+        <button class="play-btn" id="plPlay" aria-label="Play">▶</button>
+        <button class="icon-btn" id="plNext" aria-label="Next">⏭</button>
+      </div>
+      <div class="pl-seek">
+        <span id="plCur">0:00</span>
+        <input type="range" id="plSeek" min="0" max="100" step="0.1" value="0" aria-label="Seek" />
+        <span id="plDur">0:00</span>
+      </div>
+      <div class="pl-extra">
+        <button class="icon-btn" id="plKaraoke" title="Sing along" aria-label="Sing along">🎤</button>
+        <button class="icon-btn" id="plMore" title="Track actions" aria-label="Track actions">⋯</button>
+        <button class="icon-btn" id="plClose" title="Close player" aria-label="Close player">✕</button>
+      </div>
+      <audio id="audio" preload="none"></audio>
+    </div>
+
+    <!-- ---------- KARAOKE ---------- -->
+    <div class="karaoke" id="karaoke" hidden>
+      <div class="k-head">
+        <div><div class="k-title" id="kTitle"></div><div class="muted small">Synced lyrics</div></div>
+        <button class="icon-btn" id="kClose" aria-label="Close sing-along">✕</button>
+      </div>
+      <div class="k-body" id="kBody"></div>
+    </div>
+  </div>
+
+  <dialog id="sheet" class="sheet">
+    <div class="sheet-head">
+      <h3 id="sheetTitle"></h3>
+      <button class="icon-btn" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Melodrop: static single-page app, no build step.
+[build]
+  publish = "."
+
+# Pass-through proxies so the browser can call Suno API without CORS issues.
+# The user's own API key is forwarded in the Authorization header; nothing is stored.
+[[redirects]]
+  from = "/suno/*"
+  to = "https://api.sunoapi.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/upload/*"
+  to = "https://sunoapiorg.redpandaai.co/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=300, must-revalidate"
